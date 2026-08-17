@@ -1,16 +1,18 @@
+import os
 import socket
 
-# Monkeypatch socket.getaddrinfo to bypass local DNS resolution timeouts
-_orig_getaddrinfo = socket.getaddrinfo
+# Monkeypatch socket.getaddrinfo to bypass local DNS resolution timeouts if requested
+if os.getenv("BYPASS_DNS_TIMEOUTS", "false").lower() == "true":
+    _orig_getaddrinfo = socket.getaddrinfo
 
-def custom_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
-    if host == "generativelanguage.googleapis.com":
-        return _orig_getaddrinfo("172.217.117.4", port, family, type, proto, flags)
-    elif host == "ep-wispy-sun-axuj92z8-pooler.c-4.us-east-2.aws.neon.tech":
-        return _orig_getaddrinfo("18.226.241.3", port, family, type, proto, flags)
-    return _orig_getaddrinfo(host, port, family, type, proto, flags)
+    def custom_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+        if host == "generativelanguage.googleapis.com":
+            return _orig_getaddrinfo("172.217.117.4", port, family, type, proto, flags)
+        elif host == "ep-wispy-sun-axuj92z8-pooler.c-4.us-east-2.aws.neon.tech":
+            return _orig_getaddrinfo("18.226.241.3", port, family, type, proto, flags)
+        return _orig_getaddrinfo(host, port, family, type, proto, flags)
 
-socket.getaddrinfo = custom_getaddrinfo
+    socket.getaddrinfo = custom_getaddrinfo
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -25,9 +27,12 @@ from sql_validator import validate_sql
 
 app = FastAPI(title="Text-to-SQL Analytics API")
 
+allowed_origins_str = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173")
+allowed_origins = [origin.strip() for origin in allowed_origins_str.split(",") if origin.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
