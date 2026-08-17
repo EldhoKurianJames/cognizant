@@ -1,7 +1,8 @@
 version: 1
-# Point this to your subfolder if you are in a monorepo
+# Configuration for AWS Amplify Monorepo Build
 applications:
-  - frontend:
+  - appRoot: frontend
+    frontend:
       phases:
         preBuild:
           commands:
@@ -10,11 +11,9 @@ applications:
           commands:
             - npm run build
       artifacts:
-        # Notice we added the subfolder name here!
-        baseDirectory: dist
+        baseDirectory: frontend/dist
         files:
           - '**/*'
       cache:
         paths:
           - node_modules/**/*
-    appRoot: client # <-- REPLACE 'client' WITH YOUR FOLDER NAME
