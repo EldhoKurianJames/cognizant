@@ -57,27 +57,23 @@ AWS App Runner can build your container automatically from your repository or pu
 
 ## 3. Frontend Deployment (AWS Amplify)
 
-We deploy the Vite + React frontend via **AWS Amplify Hosting**. The monorepo configurations have already been set up in `amplify.yml` at the repository root.
+We deploy the Vite + React frontend via **AWS Amplify Hosting**. The build configuration in `amplify.yml` is designed to run automatically at the root of the repository without requiring manual monorepo setup in the AWS console.
 
 1. **Connect Repository in Amplify**:
-   - Go to AWS Console → **AWS Amplify** → **New App** → **Host web app**.
-   - Connect your GitHub/GitLab repository.
-   - Select the branch to build.
+   - Go to AWS Console → **AWS Amplify** &rarr; **Deploy an app** or click your existing app.
+   - Connect your Git repository (GitHub, GitLab, etc.).
+   - Select your branch (e.g., `main`).
 
-2. **Monorepo Settings**:
-   - Check the **My app is a monorepo** box.
-   - Set the monorepo directory / folder name to `frontend`.
+2. **Build Settings**:
+   - Amplify will automatically detect the custom `amplify.yml` build file in your repository root and apply it.
 
-3. **Build Settings**:
-   - Amplify will automatically detect the `amplify.yml` file at the root of the repository. It will use the configuration defined in it, which compiles the frontend app in the `frontend` folder and targets the `frontend/dist` directory for hosting.
+3. **Configure Environment Variables**:
+   - Go to **App settings > Environment variables** in the Amplify Console.
+   - Add the following variable:
+     - `VITE_API_URL`: Your AWS App Runner or ECS backend endpoint URL (e.g., `https://xxxxxx.us-east-1.awsapprunner.com`). Do not include a trailing slash.
 
-4. **Environment Variables (Important)**:
-   - Add the following environment variable in the Amplify console settings under **App settings > Environment variables**:
-     - `VITE_API_URL`: Set this to your AWS App Runner or ECS endpoint URL (e.g. `https://xxxxxx.us-east-1.awsapprunner.com`). Do not append a trailing slash.
-     - `AMPLIFY_MONOREPO_APP_ROOT`: `frontend` (tells Amplify to build from the frontend folder).
-
-5. **Deploy**:
-   - Save and deploy. Once built, Amplify will serve your React app on a secure HTTPS domain.
+4. **Deploy**:
+   - Save and deploy. The build system will automatically navigate into the `frontend` folder, install dependencies, compile the production bundles, and host the static files.
 
 ---
 
