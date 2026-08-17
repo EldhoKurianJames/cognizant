@@ -27,7 +27,7 @@ from sql_validator import validate_sql
 
 app = FastAPI(title="Text-to-SQL Analytics API")
 
-allowed_origins_str = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173")
+allowed_origins_str = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,https://main.d3dz7qujv68w6q.amplifyapp.com")
 allowed_origins = [origin.strip().rstrip("/") for origin in allowed_origins_str.split(",") if origin.strip()]
 
 app.add_middleware(
