@@ -20,3 +20,12 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def get_engine():
     return engine
+
+
+def get_db_session():
+    """FastAPI dependency yielding a SQLAlchemy session (for the query cache tables)."""
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()

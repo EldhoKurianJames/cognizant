@@ -1,3 +1,5 @@
+export type CacheStatus = "hit" | "miss" | "regenerated_schema_changed" | "n/a";
+
 export interface QueryResponse {
   question: string;
   sql: string;
@@ -5,6 +7,42 @@ export interface QueryResponse {
   rows: Record<string, unknown>[];
   row_count: number;
   source: "template" | "llm";
+  from_cache: boolean;
+  cache_status: CacheStatus;
+  schema_hash: string | null;
+  execution_time_ms: number;
+  api_tokens_used: number;
+  api_cost: number;
+  api_cost_saved: number;
+}
+
+export interface TopCachedQuery {
+  question: string;
+  hit_count: number;
+  cost_saved: number;
+  last_used_at: string | null;
+}
+
+export interface CacheAnalyticsResponse {
+  total_queries_cached: number;
+  total_cache_hits: number;
+  total_cache_misses: number;
+  total_invalidations: number;
+  hit_rate: number;
+  total_cost_saved: number;
+  top_cached_queries: TopCachedQuery[];
+}
+
+export interface CacheInvalidationEvent {
+  question: string;
+  reason: string | null;
+  old_schema_hash: string | null;
+  new_schema_hash: string | null;
+  created_at: string | null;
+}
+
+export interface CacheInvalidationsResponse {
+  invalidations: CacheInvalidationEvent[];
 }
 
 export interface SchemaColumn {
@@ -44,4 +82,14 @@ export async function runQuery(question: string): Promise<QueryResponse> {
     body: JSON.stringify({ question }),
   });
   return handleResponse<QueryResponse>(res);
+}
+
+export async function fetchCacheAnalytics(): Promise<CacheAnalyticsResponse> {
+  const res = await fetch(`${BASE_URL}/analytics/cache`);
+  return handleResponse<CacheAnalyticsResponse>(res);
+}
+
+export async function fetchCacheInvalidations(): Promise<CacheInvalidationsResponse> {
+  const res = await fetch(`${BASE_URL}/analytics/cache-invalidations`);
+  return handleResponse<CacheInvalidationsResponse>(res);
 }

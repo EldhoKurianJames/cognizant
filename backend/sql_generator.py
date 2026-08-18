@@ -18,7 +18,7 @@ def _strip_markdown_fences(text: str) -> str:
     return text
 
 
-def _generate_sql_using_gemini(question: str, schema_context: str, api_key: str) -> str:
+def _generate_sql_using_gemini(question: str, schema_context: str, api_key: str) -> tuple[str, int]:
     prompt = f"""You are a SQL expert. Convert the following natural language question into a PostgreSQL SELECT query.
 
 Database Schema:
@@ -57,7 +57,8 @@ SQL Query:"""
         with urllib.request.urlopen(req) as response:
             res_data = json.loads(response.read().decode("utf-8"))
             sql = res_data["candidates"][0]["content"]["parts"][0]["text"].strip()
-            return _strip_markdown_fences(sql)
+            tokens_used = res_data.get("usageMetadata", {}).get("totalTokenCount", 0)
+            return _strip_markdown_fences(sql), tokens_used
     except urllib.error.HTTPError as e:
         error_msg = e.read().decode("utf-8")
         raise RuntimeError(f"Gemini API request failed: {e.code} - {error_msg}")
@@ -65,7 +66,9 @@ SQL Query:"""
         raise RuntimeError(f"Failed to generate SQL using Gemini: {e}")
 
 
-def generate_sql_from_question(question: str, schema_context: str) -> str:
+def generate_sql_from_question(question: str, schema_context: str) -> tuple[str, int]:
+    """Generate SQL for `question`. Returns (sql, tokens_used) - tokens_used is a
+    best-effort count taken from whichever provider's API response reports it."""
     gemini_key = os.getenv("GEMINI_API_KEY")
     anthropic_key = os.getenv("ANTHROPIC_API_KEY")
 
@@ -98,7 +101,8 @@ SQL Query:"""
         )
 
         sql = message.content[0].text.strip()
-        return _strip_markdown_fences(sql)
+        tokens_used = message.usage.input_tokens + message.usage.output_tokens
+        return _strip_markdown_fences(sql), tokens_used
     else:
         raise RuntimeError(
             "Neither GEMINI_API_KEY nor ANTHROPIC_API_KEY is set. Add one to backend/.env"

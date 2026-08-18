@@ -26,6 +26,31 @@ function formatCell(value: unknown): string {
   return String(value);
 }
 
+function CacheBadge({ result }: { result: QueryResponse }) {
+  if (result.cache_status === "hit") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
+        ⚡ Cached · saved ${result.api_cost_saved.toFixed(6)}
+      </span>
+    );
+  }
+  if (result.cache_status === "regenerated_schema_changed") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+        🔄 Schema changed · regenerated
+      </span>
+    );
+  }
+  if (result.cache_status === "miss" && result.source === "llm") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700">
+        🆕 New query · ${result.api_cost.toFixed(6)}
+      </span>
+    );
+  }
+  return null;
+}
+
 export function ResultsTable({ result }: { result: QueryResponse }) {
   return (
     <div className="flex flex-col gap-4">
@@ -43,6 +68,10 @@ export function ResultsTable({ result }: { result: QueryResponse }) {
             }
           >
             {result.source === "template" ? "Rule-based match" : "Claude"}
+          </span>
+          <CacheBadge result={result} />
+          <span className="ml-auto text-[11px] text-neutral-400">
+            {result.execution_time_ms}ms
           </span>
         </div>
         <pre className="overflow-x-auto rounded-md border border-neutral-200 bg-neutral-50 px-4 py-3 font-mono text-[13px] leading-relaxed text-neutral-800">
