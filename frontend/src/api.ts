@@ -16,6 +16,11 @@ export interface QueryResponse {
   api_cost_saved: number;
 }
 
+export interface UploadDatabaseResponse {
+  connection_id: string;
+  filename: string;
+}
+
 export interface TopCachedQuery {
   question: string;
   hit_count: number;
@@ -70,18 +75,38 @@ async function handleResponse<T>(res: Response): Promise<T> {
   return res.json();
 }
 
-export async function fetchSchema(): Promise<SchemaResponse> {
-  const res = await fetch(`${BASE_URL}/schema`);
+export async function fetchSchema(connectionId?: string | null): Promise<SchemaResponse> {
+  const query = connectionId ? `?connection_id=${encodeURIComponent(connectionId)}` : "";
+  const res = await fetch(`${BASE_URL}/schema${query}`);
   return handleResponse<SchemaResponse>(res);
 }
 
-export async function runQuery(question: string): Promise<QueryResponse> {
+export async function runQuery(
+  question: string,
+  connectionId?: string | null
+): Promise<QueryResponse> {
   const res = await fetch(`${BASE_URL}/query`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ question }),
+    body: JSON.stringify({ question, connection_id: connectionId ?? null }),
   });
   return handleResponse<QueryResponse>(res);
+}
+
+export async function uploadDatabase(file: File): Promise<UploadDatabaseResponse> {
+  const formData = new FormData();
+  formData.append("file", file);
+  const res = await fetch(`${BASE_URL}/database/upload`, {
+    method: "POST",
+    body: formData,
+  });
+  return handleResponse<UploadDatabaseResponse>(res);
+}
+
+export async function removeUploadedDatabase(connectionId: string): Promise<void> {
+  await fetch(`${BASE_URL}/database/${encodeURIComponent(connectionId)}`, {
+    method: "DELETE",
+  });
 }
 
 export async function fetchCacheAnalytics(): Promise<CacheAnalyticsResponse> {

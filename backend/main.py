@@ -16,17 +16,20 @@ if os.getenv("BYPASS_DNS_TIMEOUTS", "false").lower() == "true":
 
 import time
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 import cache_validator
+import db_connections
 import schema_hasher
 from analytics import router as analytics_router
 from database import get_db_session, get_engine
+from db_connections import InvalidDatabaseFileError
 from db_models import Base, CacheAuditLog, QueryCache
-from models import ExecuteSQLRequest, QueryRequest, QueryResponse
+from models import ExecuteSQLRequest, QueryRequest, QueryResponse, UploadDatabaseResponse
 from schema_introspection import format_schema_for_context, get_database_schema
 from sql_generator import generate_sql_from_question
 from sql_templates import try_template_match
@@ -56,13 +59,20 @@ app.add_middleware(
 )
 
 
-def _run_select(sql: str) -> tuple[list[str], list[dict]]:
-    engine = get_engine()
+def _run_select(sql: str, engine: Engine) -> tuple[list[str], list[dict]]:
     with engine.connect() as conn:
         result = conn.execute(text(sql))
         columns = list(result.keys())
         rows = [dict(zip(columns, row)) for row in result.fetchall()]
     return columns, rows
+
+
+def _resolve_engine(connection_id: str | None) -> Engine:
+    """Default DATABASE_URL engine, unless an uploaded DB connection_id is given."""
+    try:
+        return db_connections.get_engine_for_connection(connection_id, get_engine())
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"Unknown connection_id: {connection_id}")
 
 
 @app.get("/health")
@@ -71,18 +81,37 @@ def health():
 
 
 @app.get("/schema")
-def schema():
+def schema(connection_id: str | None = None):
     try:
-        engine = get_engine()
+        engine = _resolve_engine(connection_id)
         tables = get_database_schema(engine)
         return {"tables": tables}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/database/upload", response_model=UploadDatabaseResponse)
+async def upload_database(file: UploadFile):
+    file_bytes = await file.read()
+    try:
+        connection = db_connections.register_uploaded_db(file_bytes, file.filename or "uploaded.db")
+    except InvalidDatabaseFileError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    return UploadDatabaseResponse(connection_id=connection.connection_id, filename=connection.filename)
+
+
+@app.delete("/database/{connection_id}")
+def remove_uploaded_database(connection_id: str):
+    db_connections.remove_connection(connection_id)
+    return {"status": "removed"}
+
+
 @app.post("/query", response_model=QueryResponse)
 def query(request: QueryRequest, db: Session = Depends(get_db_session)):
-    engine = get_engine()
+    engine = _resolve_engine(request.connection_id)
     start_time = time.perf_counter()
 
     from_cache = False
@@ -95,7 +124,9 @@ def query(request: QueryRequest, db: Session = Depends(get_db_session)):
     sql = None
     cached_entry = None
     schema_changed_invalidation = False
-    question_hash = cache_validator.compute_question_hash(request.question)
+    # Scoped by connection_id so an uploaded DB never shares cache entries
+    # with the default database (or with a different upload).
+    question_hash = cache_validator.compute_question_hash(request.question, request.connection_id)
 
     # 1. Try the cache first (only ever populated by LLM-generated queries).
     if ENABLE_QUERY_CACHE:
@@ -161,7 +192,7 @@ def query(request: QueryRequest, db: Session = Depends(get_db_session)):
         raise HTTPException(status_code=400, detail=f"Generated SQL rejected: {e} | SQL: {sql}")
 
     try:
-        columns, rows = _run_select(sql)
+        columns, rows = _run_select(sql, engine)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Query execution failed: {e} | SQL: {sql}")
 
@@ -209,8 +240,10 @@ def execute_sql(request: ExecuteSQLRequest):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+    engine = _resolve_engine(request.connection_id)
+
     try:
-        columns, rows = _run_select(request.sql)
+        columns, rows = _run_select(request.sql, engine)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Query execution failed: {e}")
 

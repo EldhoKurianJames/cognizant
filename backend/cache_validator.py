@@ -15,10 +15,17 @@ import schema_hasher
 from db_models import CacheAuditLog, QueryCache
 
 
-def compute_question_hash(question: str) -> str:
-    """Normalize and hash a question so semantically identical questions collide."""
+def compute_question_hash(question: str, connection_id: str | None = None) -> str:
+    """Normalize and hash a question, scoped to a specific database connection.
+
+    `connection_id` distinguishes the default configured database (None /
+    "default") from any ad-hoc uploaded database (see db_connections.py), so
+    the same question text asked against two different databases never
+    collides on the same cache entry.
+    """
     normalized = " ".join(question.strip().lower().split())
-    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+    scope = connection_id or "default"
+    return hashlib.sha256(f"{scope}::{normalized}".encode("utf-8")).hexdigest()
 
 
 def is_cache_valid(cached_query_entry: QueryCache, current_engine: Engine) -> tuple[bool, str | None]:

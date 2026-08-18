@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 class QueryRequest(BaseModel):
     question: str
+    connection_id: str | None = None  # targets an uploaded DB instead of the default DATABASE_URL
 
 
 class QueryResponse(BaseModel):
@@ -28,6 +29,12 @@ class QueryResponse(BaseModel):
 
 class ExecuteSQLRequest(BaseModel):
     sql: str
+    connection_id: str | None = None
+
+
+class UploadDatabaseResponse(BaseModel):
+    connection_id: str
+    filename: str
 
 
 class ErrorResponse(BaseModel):
