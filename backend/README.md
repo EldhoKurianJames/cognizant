@@ -6,7 +6,7 @@ results.
 
 ## Setup
 
-1. Create a virtual environment and install dependencies:
+1. Create a virtual    environment and install dependencies:
    ```
    python -m venv .venv
    .venv\Scripts\activate   (Windows)
