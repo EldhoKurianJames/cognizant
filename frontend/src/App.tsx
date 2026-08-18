@@ -4,6 +4,12 @@ import { SchemaPanel } from "./components/SchemaPanel";
 import { QueryForm } from "./components/QueryForm";
 import { ResultsTable } from "./components/ResultsTable";
 import { CacheAnalytics } from "./components/CacheAnalytics";
+import { DatabaseSelector } from "./components/DatabaseSelector";
+
+interface ActiveConnection {
+  connectionId: string;
+  filename: string;
+}
 
 function App() {
   const [schema, setSchema] = useState<SchemaResponse | null>(null);
@@ -16,19 +22,30 @@ function App() {
   const [lastQuestion, setLastQuestion] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"query" | "cache">("query");
 
-  useEffect(() => {
-    fetchSchema()
+  // null = using the default configured DATABASE_URL database.
+  const [activeConnection, setActiveConnection] = useState<ActiveConnection | null>(null);
+
+  function loadSchema(connectionId: string | null) {
+    setSchemaLoading(true);
+    setSchemaError(null);
+    fetchSchema(connectionId)
       .then(setSchema)
       .catch((err: Error) => setSchemaError(err.message))
       .finally(() => setSchemaLoading(false));
-  }, []);
+  }
+
+  useEffect(() => {
+    loadSchema(activeConnection?.connectionId ?? null);
+    // Switching databases invalidates any results shown from the previous one.
+    setResult(null);
+  }, [activeConnection]);
 
   async function handleSubmit(question: string) {
     setQueryLoading(true);
     setQueryError(null);
     setLastQuestion(question);
     try {
-      const response = await runQuery(question);
+      const response = await runQuery(question, activeConnection?.connectionId ?? null);
       setResult(response);
     } catch (err) {
       setResult(null);
@@ -40,7 +57,14 @@ function App() {
 
   return (
     <div className="flex min-h-screen bg-neutral-50">
-      <SchemaPanel schema={schema} loading={schemaLoading} error={schemaError} />
+      <aside className="w-72 shrink-0 border-r border-neutral-200 bg-white">
+        <DatabaseSelector
+          activeConnection={activeConnection}
+          onUploaded={setActiveConnection}
+          onReset={() => setActiveConnection(null)}
+        />
+        <SchemaPanel schema={schema} loading={schemaLoading} error={schemaError} bare />
+      </aside>
 
       <main className="flex-1">
         <header className="border-b border-neutral-200 bg-white px-8 py-5">

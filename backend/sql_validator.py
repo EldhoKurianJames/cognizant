@@ -2,7 +2,7 @@ import sqlparse
 
 FORBIDDEN_KEYWORDS = [
     "DROP", "ALTER", "DELETE", "INSERT", "UPDATE", "CREATE TABLE",
-    "TRUNCATE", "GRANT", "REVOKE",
+    "TRUNCATE", "GRANT", "REVOKE", "ATTACH", "DETACH", "PRAGMA", "VACUUM",
 ]
 
 

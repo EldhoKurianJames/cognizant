@@ -4,11 +4,13 @@ interface Props {
   schema: SchemaResponse | null;
   loading: boolean;
   error: string | null;
+  /** When true, renders without its own <aside> wrapper (for embedding inside another sidebar). */
+  bare?: boolean;
 }
 
-export function SchemaPanel({ schema, loading, error }: Props) {
+function SchemaPanelContent({ schema, loading, error }: Props) {
   return (
-    <aside className="w-72 shrink-0 border-r border-neutral-200 bg-white">
+    <>
       <div className="border-b border-neutral-200 px-5 py-4">
         <h2 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
           Database Schema
@@ -40,6 +42,17 @@ export function SchemaPanel({ schema, loading, error }: Props) {
             </div>
           ))}
       </div>
+    </>
+  );
+}
+
+export function SchemaPanel({ schema, loading, error, bare }: Props) {
+  if (bare) {
+    return <SchemaPanelContent schema={schema} loading={loading} error={error} />;
+  }
+  return (
+    <aside className="w-72 shrink-0 border-r border-neutral-200 bg-white">
+      <SchemaPanelContent schema={schema} loading={loading} error={error} />
     </aside>
   );
 }
