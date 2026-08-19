@@ -81,9 +81,9 @@ export function CacheAnalytics({ activeConnection, isDefault }: CacheAnalyticsPr
 
   if (error) {
     return (
-      <div className="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-        <p className="font-semibold">Failed to load cache analytics</p>
-        <p className="mt-1 text-xs text-red-600">{error}</p>
+      <div className="rounded-md border border-neutral-200 bg-white p-4 text-sm text-neutral-700">
+        <p className="font-semibold text-neutral-800">Failed to load cache analytics</p>
+        <p className="mt-1 text-xs text-neutral-500">{error}</p>
       </div>
     );
   }
