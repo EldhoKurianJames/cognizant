@@ -6,6 +6,11 @@ if os.getenv("BYPASS_DNS_TIMEOUTS", "false").lower() == "true":
     _orig_getaddrinfo = socket.getaddrinfo
 
     def custom_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+        """
+        Custom DNS resolution function used to monkeypatch socket.getaddrinfo.
+        This forces specific IP addresses for the Gemini API and Neon PostgreSQL pooler
+        to bypass potentially slow or failing local DNS lookups, improving startup and request speed.
+        """
         if host == "generativelanguage.googleapis.com":
             return _orig_getaddrinfo("172.217.117.4", port, family, type, proto, flags)
         elif host == "ep-wispy-sun-axuj92z8-pooler.c-4.us-east-2.aws.neon.tech":
@@ -79,6 +84,14 @@ app.add_middleware(
 
 
 def _run_select(sql: str, engine: Engine) -> tuple[list[str], list[dict]]:
+    """
+    Executes a read-only SELECT query against the provided database engine.
+    
+    Returns:
+        A tuple containing:
+        - A list of column names (strings).
+        - A list of rows (each row is a dictionary mapping column names to values).
+    """
     with engine.connect() as conn:
         result = conn.execute(text(sql))
         columns = list(result.keys())
@@ -87,14 +100,26 @@ def _run_select(sql: str, engine: Engine) -> tuple[list[str], list[dict]]:
 
 
 def _run_write(sql: str, engine: Engine) -> int:
-    """Execute a write/DDL statement and return the number of affected rows."""
+    """
+    Executes a write or DDL statement (e.g., INSERT, UPDATE, DELETE, CREATE) against the database.
+    This runs in a transaction context (engine.begin()) to ensure safety.
+    
+    Returns:
+        The number of rows affected by the query. Returns 0 if the query does not affect rows.
+    """
     with engine.begin() as conn:
         result = conn.execute(text(sql))
         return result.rowcount if result.rowcount and result.rowcount >= 0 else 0
 
 
 def _resolve_engine(connection_id: str | None) -> Engine:
-    """Default DATABASE_URL engine, unless an uploaded DB connection_id is given."""
+    """
+    Determines which SQLAlchemy Engine to use for the incoming request.
+    
+    If a connection_id is provided, it retrieves the engine for the corresponding
+    user-uploaded SQLite database. If connection_id is None, it defaults to the
+    main PostgreSQL engine (configured via DATABASE_URL).
+    """
     try:
         return db_connections.get_engine_for_connection(connection_id, get_engine())
     except KeyError:
@@ -103,11 +128,20 @@ def _resolve_engine(connection_id: str | None) -> Engine:
 
 @app.get("/health")
 def health():
+    """
+    Basic health check endpoint. Used by deployment platforms (like AWS, Render, etc.)
+    and load balancers to verify that the API is running and responsive.
+    """
     return {"status": "ok"}
 
 
 @app.get("/schema")
 def schema(connection_id: str | None = None):
+    """
+    Retrieves the database schema (tables and columns) for the active connection.
+    This is called by the frontend to display the available schema to the user
+    and is also used internally to provide context to the LLM when generating SQL.
+    """
     try:
         engine = _resolve_engine(connection_id)
         schema_data = get_database_schema(engine)
@@ -120,6 +154,12 @@ def schema(connection_id: str | None = None):
 
 @app.post("/database/upload", response_model=UploadDatabaseResponse)
 async def upload_database(file: UploadFile):
+    """
+    Accepts a user-uploaded SQLite database file (.db).
+    The file is saved locally and registered as an active, read-only ad-hoc connection.
+    This allows users to immediately query their own custom datasets without
+    overwriting or affecting the main PostgreSQL database.
+    """
     file_bytes = await file.read()
     try:
         connection = db_connections.register_uploaded_db(file_bytes, file.filename or "uploaded.db")
@@ -131,12 +171,26 @@ async def upload_database(file: UploadFile):
 
 @app.delete("/database/{connection_id}")
 def remove_uploaded_database(connection_id: str):
+    """
+    Cleans up and removes a previously uploaded ad-hoc SQLite database connection.
+    This frees up resources and deletes the file from the server's local storage.
+    """
     db_connections.remove_connection(connection_id)
     return {"status": "removed"}
 
 
 @app.post("/query", response_model=QueryResponse)
 def query(request: QueryRequest, db: Session = Depends(get_db_session)):
+    """
+    The main text-to-SQL endpoint. It takes a natural language question and returns
+    both the generated SQL and the resulting data.
+    
+    Workflow:
+    1. Check Cache: Looks for an existing, valid generated query for this exact question.
+    2. Fallback to Templates: If no cache exists, checks if the question matches a known, simple regex pattern (fast-path).
+    3. Generate via LLM: If templates fail, calls Gemini/Claude to generate the SQL.
+    4. Validation & Execution: Ensures the query is safe, runs it against the selected database, and records metrics (cost, time).
+    """
     engine = _resolve_engine(request.connection_id)
     start_time = time.perf_counter()
 
@@ -317,6 +371,11 @@ def query(request: QueryRequest, db: Session = Depends(get_db_session)):
 
 @app.post("/execute-sql")
 def execute_sql(request: ExecuteSQLRequest):
+    """
+    Executes a raw SQL statement provided directly by the client.
+    This bypasses natural language generation, but the query is still strictly validated
+    to ensure it is a safe, read-only SELECT statement.
+    """
     try:
         validate_sql(request.sql)
     except ValueError as e:
