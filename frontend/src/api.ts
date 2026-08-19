@@ -54,10 +54,23 @@ export interface CacheInvalidationsResponse {
 export interface SchemaColumn {
   name: string;
   type: string;
+  primary_key?: boolean;
+  is_foreign_key?: boolean;
+  nullable?: boolean;
+}
+
+export interface SchemaRelationship {
+  id?: string;
+  source_table: string;
+  source_column: string;
+  target_table: string;
+  target_column: string;
+  constraint_name?: string | null;
 }
 
 export interface SchemaResponse {
   tables: Record<string, SchemaColumn[]>;
+  relationships?: SchemaRelationship[];
 }
 
 const BASE_URL = import.meta.env.VITE_API_URL || "/api";

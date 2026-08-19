@@ -91,8 +91,8 @@ def health():
 def schema(connection_id: str | None = None):
     try:
         engine = _resolve_engine(connection_id)
-        tables = get_database_schema(engine)
-        return {"tables": tables}
+        schema_data = get_database_schema(engine)
+        return schema_data
     except HTTPException:
         raise
     except Exception as e:
@@ -158,8 +158,9 @@ def query(request: QueryRequest, db: Session = Depends(get_db_session)):
     # 2. No valid cache entry: try the deterministic template match, then the LLM.
     if sql is None:
         try:
-            tables = get_database_schema(engine)
-            schema_context = format_schema_for_context(tables)
+            schema_data = get_database_schema(engine)
+            tables = schema_data.get("tables", {})
+            schema_context = format_schema_for_context(schema_data)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to read schema: {e}")
 
