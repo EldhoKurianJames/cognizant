@@ -93,8 +93,8 @@ function App() {
                 {mainView === "canvas"
                   ? "Interactive Entity-Relationship (ER) Diagram. Drag nodes, pan, zoom, or search schema."
                   : writeMode
-                  ? "Write mode is ON — queries will be executed on the database."
-                  : "Ask questions about your data in plain English. Only read-only queries are executed."}
+                    ? "Write mode is ON — queries will be executed on the database."
+                    : "Ask questions about your data in plain English. Only read-only queries are executed."}
               </p>
             </div>
 
@@ -183,9 +183,9 @@ function App() {
                 <QueryForm onSubmit={handleSubmit} loading={queryLoading} />
 
                 {queryError && (
-                  <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                    <p className="font-medium">Couldn't answer that question</p>
-                    <p className="mt-0.5 text-red-600">{queryError}</p>
+                  <div className="rounded-md border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-700">
+                    <p className="font-medium text-neutral-800">Couldn't answer that question</p>
+                    <p className="mt-0.5 text-neutral-500">{queryError}</p>
                   </div>
                 )}
 

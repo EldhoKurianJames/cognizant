@@ -123,7 +123,7 @@ def _resolve_engine(connection_id: str | None) -> Engine:
     try:
         return db_connections.get_engine_for_connection(connection_id, get_engine())
     except KeyError:
-        raise HTTPException(status_code=404, detail=f"Unknown connection_id: {connection_id}")
+        raise HTTPException(status_code=404, detail="Uploaded database session not found. Please re-upload your file.")
 
 
 @app.get("/health")
@@ -149,7 +149,7 @@ def schema(connection_id: str | None = None):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to read the database schema.")
 
 
 @app.post("/database/upload", response_model=UploadDatabaseResponse)
@@ -239,7 +239,7 @@ def query(request: QueryRequest, db: Session = Depends(get_db_session)):
             tables = schema_data.get("tables", {})
             schema_context = format_schema_for_context(schema_data)
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to read schema: {e}")
+            raise HTTPException(status_code=500, detail="Failed to read the database schema.")
 
         sql = try_template_match(request.question, tables)
         source = "template"
@@ -248,7 +248,7 @@ def query(request: QueryRequest, db: Session = Depends(get_db_session)):
             try:
                 sql, tokens_used = generate_sql_from_question(request.question, schema_context)
             except Exception as e:
-                raise HTTPException(status_code=500, detail=f"SQL generation failed: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
             source = "llm"
 
             try:
@@ -299,7 +299,7 @@ def query(request: QueryRequest, db: Session = Depends(get_db_session)):
         try:
             affected = _run_write(sql, engine)
         except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Write query failed: {e} | SQL: {sql}")
+            raise HTTPException(status_code=400, detail="Write query failed to execute.")
 
         execution_time_ms = int((time.perf_counter() - start_time) * 1000)
 
@@ -325,12 +325,12 @@ def query(request: QueryRequest, db: Session = Depends(get_db_session)):
     try:
         validate_sql(sql)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=f"Generated SQL rejected: {e} | SQL: {sql}")
+        raise HTTPException(status_code=400, detail=str(e))
 
     try:
         columns, rows = _run_select(sql, engine)
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Query execution failed: {e} | SQL: {sql}")
+        raise HTTPException(status_code=400, detail="Query failed to run. Try rephrasing your question.")
 
     execution_time_ms = int((time.perf_counter() - start_time) * 1000)
 
@@ -386,6 +386,6 @@ def execute_sql(request: ExecuteSQLRequest):
     try:
         columns, rows = _run_select(request.sql, engine)
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Query execution failed: {e}")
+        raise HTTPException(status_code=400, detail="Query failed to run. Please check your SQL and try again.")
 
     return {"sql": request.sql, "columns": columns, "rows": rows, "row_count": len(rows)}
