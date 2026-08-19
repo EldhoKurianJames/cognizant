@@ -129,9 +129,9 @@ export function SchemaPanel({
         )}
 
         {error && (
-          <div className="p-3.5 rounded-md bg-red-50 border border-red-200 text-xs text-red-600">
-            <p className="font-semibold mb-0.5">Failed to fetch schema</p>
-            <p>{error}</p>
+          <div className="p-3.5 rounded-md bg-white border border-neutral-200 text-xs text-neutral-700">
+            <p className="font-semibold mb-0.5 text-neutral-800">Failed to fetch schema</p>
+            <p className="text-neutral-500">{error}</p>
           </div>
         )}
 
