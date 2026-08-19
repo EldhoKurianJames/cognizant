@@ -209,7 +209,10 @@ function App() {
           {mainView === "cache" && (
             <div className="h-full overflow-y-auto">
               <div className="mx-auto flex max-w-4xl flex-col gap-6 px-8 py-8">
-                <CacheAnalytics />
+                <CacheAnalytics
+                  activeConnection={activeConnection}
+                  isDefault={activeConnection === null}
+                />
               </div>
             </div>
           )}

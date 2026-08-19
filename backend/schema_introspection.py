@@ -1,20 +1,24 @@
 from sqlalchemy import inspect
 from sqlalchemy.engine import Engine
 
-
-EXCLUDED_TABLES = {"query_cache", "cache_audit_log"}
+INTERNAL_APP_TABLES = ["query_cache", "dynamic_query_cache", "cache_audit_log"]
 
 
 def get_database_schema(engine: Engine) -> dict:
-    """Introspect the database and return table/column metadata, primary keys, and relationships."""
+    """Introspect the database and return table/column metadata, primary keys, and relationships,
+
+    filtering out internal application tables and system tables.
+    """
     inspector = inspect(engine)
     tables = {}
     relationships = []
 
+    excluded_set = {t.lower() for t in INTERNAL_APP_TABLES}
+
     # Get all table names, excluding internal sqlite system tables and app cache tables
     all_tables = [
         t for t in inspector.get_table_names()
-        if not t.startswith("sqlite_") and t.lower() not in EXCLUDED_TABLES
+        if not t.startswith("sqlite_") and t.lower() not in excluded_set
     ]
 
     # Pre-collect foreign keys to identify FK columns and build relationships list
@@ -28,16 +32,22 @@ def get_database_schema(engine: Engine) -> dict:
                 constrained_cols = fk.get("constrained_columns") or []
                 referred_cols = fk.get("referred_columns") or []
 
-                for s_col, t_col in zip(constrained_cols, referred_cols):
-                    if referred_table and s_col and t_col:
-                        relationships.append({
-                            "id": f"{table_name}.{s_col}->{referred_table}.{t_col}",
-                            "source_table": table_name,
-                            "source_column": s_col,
-                            "target_table": referred_table,
-                            "target_column": t_col,
-                            "constraint_name": fk.get("name"),
-                        })
+                # Ignore foreign keys that point to excluded internal tables
+                if (
+                    referred_table
+                    and referred_table.lower() not in excluded_set
+                    and not referred_table.startswith("sqlite_")
+                ):
+                    for s_col, t_col in zip(constrained_cols, referred_cols):
+                        if s_col and t_col:
+                            relationships.append({
+                                "id": f"{table_name}.{s_col}->{referred_table}.{t_col}",
+                                "source_table": table_name,
+                                "source_column": s_col,
+                                "target_table": referred_table,
+                                "target_column": t_col,
+                                "constraint_name": fk.get("name"),
+                            })
         except Exception:
             table_fks[table_name] = []
 
@@ -57,8 +67,14 @@ def get_database_schema(engine: Engine) -> dict:
         # Set of foreign key column names in this table
         fk_columns = set()
         for fk in table_fks.get(table_name, []):
-            for col in fk.get("constrained_columns") or []:
-                fk_columns.add(col)
+            referred_table = fk.get("referred_table")
+            if (
+                referred_table
+                and referred_table.lower() not in excluded_set
+                and not referred_table.startswith("sqlite_")
+            ):
+                for col in fk.get("constrained_columns") or []:
+                    fk_columns.add(col)
 
         table_columns = []
         for col in columns:

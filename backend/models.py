@@ -28,6 +28,11 @@ class QueryResponse(BaseModel):
     api_cost: float = 0.0
     api_cost_saved: float = 0.0
 
+    # Standardized metadata flags for frontend components
+    is_cached: bool = False
+    generation_time_ms: int = 0
+    cost_saved: float = 0.0
+
 
 class ExecuteSQLRequest(BaseModel):
     sql: str

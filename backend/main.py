@@ -28,7 +28,7 @@ import schema_hasher
 from analytics import router as analytics_router
 from database import get_db_session, get_engine
 from db_connections import InvalidDatabaseFileError
-from db_models import Base, CacheAuditLog, QueryCache
+from db_models import Base, CacheAuditLog, DynamicQueryCache, QueryCache
 from models import ExecuteSQLRequest, QueryRequest, QueryResponse, UploadDatabaseResponse
 from schema_introspection import format_schema_for_context, get_database_schema
 from sql_generator import generate_sql_from_question
@@ -40,6 +40,25 @@ app.include_router(analytics_router)
 
 # Create the query cache tables on startup if they don't already exist.
 Base.metadata.create_all(bind=get_engine())
+with get_engine().connect() as _conn:
+    try:
+        _conn.execute(text("""
+            ALTER TABLE cache_audit_log ADD COLUMN IF NOT EXISTS connection_id VARCHAR(64);
+            ALTER TABLE dynamic_query_cache ADD COLUMN IF NOT EXISTS connection_id VARCHAR(64);
+            ALTER TABLE dynamic_query_cache ADD COLUMN IF NOT EXISTS question TEXT;
+            ALTER TABLE dynamic_query_cache ADD COLUMN IF NOT EXISTS question_hash VARCHAR(64);
+            ALTER TABLE dynamic_query_cache ADD COLUMN IF NOT EXISTS schema_hash_at_cache_time VARCHAR(64);
+            ALTER TABLE dynamic_query_cache ADD COLUMN IF NOT EXISTS api_tokens_used INTEGER DEFAULT 0;
+            ALTER TABLE dynamic_query_cache ADD COLUMN IF NOT EXISTS api_cost DOUBLE PRECISION DEFAULT 0.0;
+            ALTER TABLE dynamic_query_cache ADD COLUMN IF NOT EXISTS hit_count INTEGER DEFAULT 0;
+            ALTER TABLE dynamic_query_cache ADD COLUMN IF NOT EXISTS cache_status VARCHAR(32) DEFAULT 'miss';
+            ALTER TABLE dynamic_query_cache ADD COLUMN IF NOT EXISTS last_used_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+            ALTER TABLE dynamic_query_cache ALTER COLUMN schema_hash DROP NOT NULL;
+            ALTER TABLE dynamic_query_cache ALTER COLUMN user_question DROP NOT NULL;
+        """))
+        _conn.commit()
+    except Exception:
+        pass
 
 ENABLE_QUERY_CACHE = os.getenv("ENABLE_QUERY_CACHE", "true").lower() == "true"
 CACHE_INVALIDATION_ON_SCHEMA_CHANGE = (
@@ -137,7 +156,7 @@ def query(request: QueryRequest, db: Session = Depends(get_db_session)):
 
     # 1. Try the cache first (only ever populated by LLM-generated queries).
     if ENABLE_QUERY_CACHE:
-        existing_entry = db.query(QueryCache).filter_by(question_hash=question_hash).first()
+        existing_entry = cache_validator.find_cache_entry(question_hash, request.connection_id, db)
         if existing_entry is not None:
             valid, current_hash = cache_validator.is_cache_valid(existing_entry, engine)
             if valid:
@@ -151,7 +170,11 @@ def query(request: QueryRequest, db: Session = Depends(get_db_session)):
                 # execution time is recorded below, once the query actually runs.
             elif CACHE_INVALIDATION_ON_SCHEMA_CHANGE:
                 cache_validator.invalidate_cache_entry(
-                    question_hash, db, reason="schema_changed", new_schema_hash=current_hash
+                    question_hash,
+                    db,
+                    connection_id=request.connection_id,
+                    reason="schema_changed",
+                    new_schema_hash=current_hash,
                 )
                 schema_changed_invalidation = True
 
@@ -192,6 +215,7 @@ def query(request: QueryRequest, db: Session = Depends(get_db_session)):
                     api_cost=api_cost,
                     db_session=db,
                     cache_status=cache_status,
+                    connection_id=request.connection_id,
                 )
 
     # If the generated query is a write / DDL statement, either execute it
@@ -206,6 +230,15 @@ def query(request: QueryRequest, db: Session = Depends(get_db_session)):
                 row_count=0,
                 source=source,
                 is_preview=True,
+                from_cache=False,
+                is_cached=False,
+                cache_status="n/a",
+                execution_time_ms=0,
+                generation_time_ms=0,
+                api_tokens_used=tokens_used,
+                api_cost=api_cost,
+                api_cost_saved=0.0,
+                cost_saved=0.0,
             )
 
         # Write mode is ON — execute the statement.
@@ -224,9 +257,15 @@ def query(request: QueryRequest, db: Session = Depends(get_db_session)):
             row_count=1,
             source=source,
             is_preview=False,
+            from_cache=False,
+            is_cached=False,
+            cache_status="n/a",
             execution_time_ms=execution_time_ms,
+            generation_time_ms=execution_time_ms,
             api_tokens_used=tokens_used,
             api_cost=api_cost,
+            api_cost_saved=0.0,
+            cost_saved=0.0,
         )
 
     try:
@@ -241,23 +280,20 @@ def query(request: QueryRequest, db: Session = Depends(get_db_session)):
 
     execution_time_ms = int((time.perf_counter() - start_time) * 1000)
 
-    if from_cache:
-        cache_validator.record_cache_hit(cached_entry, db, execution_time_ms)
-    elif source == "llm":
-        db.add(
-            CacheAuditLog(
-                question=request.question,
-                cache_status=cache_status,
-                reason="schema_changed" if cache_status == "regenerated_schema_changed" else None,
-                old_schema_hash=None,
-                new_schema_hash=schema_hash,
-                query_execution_time_ms=execution_time_ms,
-                api_tokens_used=tokens_used,
-                api_cost_saved=0.0,
-                user_id="demo_user",
-            )
+    if from_cache and cached_entry is not None:
+        cache_validator.record_cache_hit(
+            cached_entry, db, execution_time_ms, connection_id=request.connection_id
         )
-        db.commit()
+    elif source == "llm":
+        cache_validator.record_cache_miss(
+            question=request.question,
+            db_session=db,
+            execution_time_ms=execution_time_ms,
+            tokens_used=tokens_used,
+            schema_hash=schema_hash,
+            cache_status=cache_status,
+            connection_id=request.connection_id,
+        )
 
     return QueryResponse(
         question=request.question,
@@ -267,12 +303,15 @@ def query(request: QueryRequest, db: Session = Depends(get_db_session)):
         row_count=len(rows),
         source=source,
         from_cache=from_cache,
+        is_cached=from_cache,
         cache_status=cache_status,
         schema_hash=schema_hash,
         execution_time_ms=execution_time_ms,
+        generation_time_ms=execution_time_ms,
         api_tokens_used=tokens_used,
         api_cost=api_cost,
         api_cost_saved=api_cost_saved,
+        cost_saved=api_cost_saved,
     )
 
 

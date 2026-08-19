@@ -128,12 +128,44 @@ export async function removeUploadedDatabase(connectionId: string): Promise<void
   });
 }
 
-export async function fetchCacheAnalytics(): Promise<CacheAnalyticsResponse> {
-  const res = await fetch(`${BASE_URL}/analytics/cache`);
+export interface FetchCacheAnalyticsOptions {
+  isDefault?: boolean;
+  connectionId?: string | null;
+  schemaHash?: string | null;
+}
+
+export async function fetchCacheAnalytics(
+  options?: FetchCacheAnalyticsOptions
+): Promise<CacheAnalyticsResponse> {
+  const params = new URLSearchParams();
+  if (options?.isDefault !== undefined) {
+    params.set("is_default", String(options.isDefault));
+  }
+  if (options?.connectionId) {
+    params.set("connection_id", options.connectionId);
+  }
+  if (options?.schemaHash) {
+    params.set("schema_hash", options.schemaHash);
+  }
+  const queryString = params.toString() ? `?${params.toString()}` : "";
+  const res = await fetch(`${BASE_URL}/analytics/cache${queryString}`);
   return handleResponse<CacheAnalyticsResponse>(res);
 }
 
-export async function fetchCacheInvalidations(): Promise<CacheInvalidationsResponse> {
-  const res = await fetch(`${BASE_URL}/analytics/cache-invalidations`);
+export async function fetchCacheInvalidations(
+  options?: FetchCacheAnalyticsOptions
+): Promise<CacheInvalidationsResponse> {
+  const params = new URLSearchParams();
+  if (options?.isDefault !== undefined) {
+    params.set("is_default", String(options.isDefault));
+  }
+  if (options?.connectionId) {
+    params.set("connection_id", options.connectionId);
+  }
+  if (options?.schemaHash) {
+    params.set("schema_hash", options.schemaHash);
+  }
+  const queryString = params.toString() ? `?${params.toString()}` : "";
+  const res = await fetch(`${BASE_URL}/analytics/cache-invalidations${queryString}`);
   return handleResponse<CacheInvalidationsResponse>(res);
 }
