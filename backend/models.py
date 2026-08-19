@@ -7,6 +7,7 @@ from pydantic import BaseModel
 class QueryRequest(BaseModel):
     question: str
     connection_id: str | None = None  # targets an uploaded DB instead of the default DATABASE_URL
+    allow_write: bool = False  # when True, write/DDL queries are executed on the database
 
 
 class QueryResponse(BaseModel):

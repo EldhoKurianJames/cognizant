@@ -21,6 +21,7 @@ function App() {
   const [queryError, setQueryError] = useState<string | null>(null);
   const [lastQuestion, setLastQuestion] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"query" | "cache">("query");
+  const [writeMode, setWriteMode] = useState(false);
 
   // null = using the default configured DATABASE_URL database.
   const [activeConnection, setActiveConnection] = useState<ActiveConnection | null>(null);
@@ -45,7 +46,7 @@ function App() {
     setQueryError(null);
     setLastQuestion(question);
     try {
-      const response = await runQuery(question, activeConnection?.connectionId ?? null);
+      const response = await runQuery(question, activeConnection?.connectionId ?? null, writeMode);
       setResult(response);
     } catch (err) {
       setResult(null);
@@ -72,28 +73,47 @@ function App() {
             <div>
               <h1 className="text-lg font-semibold text-neutral-900">Analytics Query Assistant</h1>
               <p className="mt-0.5 text-sm text-neutral-500">
-                Ask questions about your data in plain English. Only read-only queries are executed.
+                {writeMode
+                  ? "Write mode is ON — queries will be executed on the database."
+                  : "Ask questions about your data in plain English. Only read-only queries are executed."}
               </p>
             </div>
-            <div className="flex gap-1 rounded-md border border-neutral-200 bg-neutral-50 p-1">
-              <button
-                onClick={() => setActiveTab("query")}
-                className={
-                  "rounded-md px-3 py-1.5 text-xs font-medium " +
-                  (activeTab === "query" ? "bg-white shadow-sm text-neutral-900" : "text-neutral-500")
-                }
-              >
-                Query
-              </button>
-              <button
-                onClick={() => setActiveTab("cache")}
-                className={
-                  "rounded-md px-3 py-1.5 text-xs font-medium " +
-                  (activeTab === "cache" ? "bg-white shadow-sm text-neutral-900" : "text-neutral-500")
-                }
-              >
-                Cache Analytics
-              </button>
+            <div className="flex items-center gap-4">
+              <label className="flex cursor-pointer items-center gap-2">
+                <span className={"text-xs font-medium " + (writeMode ? "text-red-600" : "text-neutral-500")}>
+                  Write Mode
+                </span>
+                <div className="relative">
+                  <input
+                    type="checkbox"
+                    checked={writeMode}
+                    onChange={(e) => setWriteMode(e.target.checked)}
+                    className="peer sr-only"
+                  />
+                  <div className={"h-5 w-9 rounded-full transition-colors " + (writeMode ? "bg-red-500" : "bg-neutral-300")} />
+                  <div className={"absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform " + (writeMode ? "translate-x-4" : "translate-x-0")} />
+                </div>
+              </label>
+              <div className="flex gap-1 rounded-md border border-neutral-200 bg-neutral-50 p-1">
+                <button
+                  onClick={() => setActiveTab("query")}
+                  className={
+                    "rounded-md px-3 py-1.5 text-xs font-medium " +
+                    (activeTab === "query" ? "bg-white shadow-sm text-neutral-900" : "text-neutral-500")
+                  }
+                >
+                  Query
+                </button>
+                <button
+                  onClick={() => setActiveTab("cache")}
+                  className={
+                    "rounded-md px-3 py-1.5 text-xs font-medium " +
+                    (activeTab === "cache" ? "bg-white shadow-sm text-neutral-900" : "text-neutral-500")
+                  }
+                >
+                  Cache Analytics
+                </button>
+              </div>
             </div>
           </div>
         </header>

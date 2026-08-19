@@ -67,6 +67,13 @@ def _run_select(sql: str, engine: Engine) -> tuple[list[str], list[dict]]:
     return columns, rows
 
 
+def _run_write(sql: str, engine: Engine) -> int:
+    """Execute a write/DDL statement and return the number of affected rows."""
+    with engine.begin() as conn:
+        result = conn.execute(text(sql))
+        return result.rowcount if result.rowcount and result.rowcount >= 0 else 0
+
+
 def _resolve_engine(connection_id: str | None) -> Engine:
     """Default DATABASE_URL engine, unless an uploaded DB connection_id is given."""
     try:
@@ -186,17 +193,39 @@ def query(request: QueryRequest, db: Session = Depends(get_db_session)):
                     cache_status=cache_status,
                 )
 
-    # If the generated query is a write / DDL statement, return it as a
-    # "preview" — the SQL is shown to the user but never executed.
+    # If the generated query is a write / DDL statement, either execute it
+    # (when allow_write is on) or return a preview.
     if is_write_query(sql):
+        if not request.allow_write:
+            return QueryResponse(
+                question=request.question,
+                sql=sql,
+                columns=[],
+                rows=[],
+                row_count=0,
+                source=source,
+                is_preview=True,
+            )
+
+        # Write mode is ON — execute the statement.
+        try:
+            affected = _run_write(sql, engine)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Write query failed: {e} | SQL: {sql}")
+
+        execution_time_ms = int((time.perf_counter() - start_time) * 1000)
+
         return QueryResponse(
             question=request.question,
             sql=sql,
-            columns=[],
-            rows=[],
-            row_count=0,
+            columns=["affected_rows"],
+            rows=[{"affected_rows": affected}],
+            row_count=1,
             source=source,
-            is_preview=True,
+            is_preview=False,
+            execution_time_ms=execution_time_ms,
+            api_tokens_used=tokens_used,
+            api_cost=api_cost,
         )
 
     try:

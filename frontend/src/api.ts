@@ -84,12 +84,17 @@ export async function fetchSchema(connectionId?: string | null): Promise<SchemaR
 
 export async function runQuery(
   question: string,
-  connectionId?: string | null
+  connectionId?: string | null,
+  allowWrite: boolean = false
 ): Promise<QueryResponse> {
   const res = await fetch(`${BASE_URL}/query`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ question, connection_id: connectionId ?? null }),
+    body: JSON.stringify({
+      question,
+      connection_id: connectionId ?? null,
+      allow_write: allowWrite,
+    }),
   });
   return handleResponse<QueryResponse>(res);
 }
