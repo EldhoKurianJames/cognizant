@@ -60,10 +60,16 @@ SQL Query:"""
             tokens_used = res_data.get("usageMetadata", {}).get("totalTokenCount", 0)
             return _strip_markdown_fences(sql), tokens_used
     except urllib.error.HTTPError as e:
-        error_msg = e.read().decode("utf-8")
-        raise RuntimeError(f"Gemini API request failed: {e.code} - {error_msg}")
-    except Exception as e:
-        raise RuntimeError(f"Failed to generate SQL using Gemini: {e}")
+        if e.code == 429:
+            raise RuntimeError("Gemini API quota exhausted. Please try again later.")
+        elif e.code == 400:
+            raise RuntimeError("Gemini API key is invalid or the request was malformed.")
+        elif e.code == 403:
+            raise RuntimeError("Gemini API key does not have permission. Check your API key.")
+        else:
+            raise RuntimeError(f"Gemini API error {e.code}. Please try again.")
+    except Exception:
+        raise RuntimeError("Could not reach the Gemini API. Check your connection and API key.")
 
 
 def generate_sql_from_question(question: str, schema_context: str) -> tuple[str, int]:
@@ -94,16 +100,25 @@ IMPORTANT RULES:
 
 SQL Query:"""
 
-        message = client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=500,
-            messages=[{"role": "user", "content": prompt}],
-        )
+        try:
+            message = client.messages.create(
+                model="claude-haiku-4-5-20251001",
+                max_tokens=500,
+                messages=[{"role": "user", "content": prompt}],
+            )
+        except Exception as e:
+            err = str(e).lower()
+            if "rate_limit" in err or "rate limit" in err:
+                raise RuntimeError("Claude API rate limit reached. Please wait and try again.")
+            elif "overloaded" in err:
+                raise RuntimeError("Claude API is overloaded. Please try again in a moment.")
+            elif "authentication" in err or "invalid x-api-key" in err:
+                raise RuntimeError("Anthropic API key is invalid. Check your configuration.")
+            else:
+                raise RuntimeError("Could not reach the Claude API. Check your connection and API key.")
 
         sql = message.content[0].text.strip()
         tokens_used = message.usage.input_tokens + message.usage.output_tokens
         return _strip_markdown_fences(sql), tokens_used
     else:
-        raise RuntimeError(
-            "Neither GEMINI_API_KEY nor ANTHROPIC_API_KEY is set. Add one to backend/.env"
-        )
+        raise RuntimeError("No AI API key configured. Set GEMINI_API_KEY or ANTHROPIC_API_KEY in backend/.env.")
