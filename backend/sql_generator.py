@@ -19,7 +19,7 @@ def _strip_markdown_fences(text: str) -> str:
 
 
 def _generate_sql_using_gemini(question: str, schema_context: str, api_key: str) -> tuple[str, int]:
-    prompt = f"""You are a SQL expert. Convert the following natural language question into a PostgreSQL SELECT query.
+    prompt = f"""You are a SQL expert. Convert the following natural language question into a valid PostgreSQL query.
 
 Database Schema:
 {schema_context}
@@ -28,7 +28,7 @@ User Question: {question}
 
 IMPORTANT RULES:
 1. Return ONLY the SQL query, no markdown, no explanation
-2. Generate ONLY SELECT queries
+2. Generate the most appropriate SQL statement (SELECT, INSERT, UPDATE, DELETE, ALTER, etc.)
 3. Use appropriate JOINs, WHERE, GROUP BY, ORDER BY, LIMIT as needed
 4. If the question is ambiguous, make reasonable assumptions
 5. Ensure the query is syntactically correct
@@ -78,7 +78,7 @@ def generate_sql_from_question(question: str, schema_context: str) -> tuple[str,
         from anthropic import Anthropic
         client = Anthropic(api_key=anthropic_key)
 
-        prompt = f"""You are a SQL expert. Convert the following natural language question into a PostgreSQL SELECT query.
+        prompt = f"""You are a SQL expert. Convert the following natural language question into a valid PostgreSQL query.
 
 Database Schema:
 {schema_context}
@@ -87,7 +87,7 @@ User Question: {question}
 
 IMPORTANT RULES:
 1. Return ONLY the SQL query, no markdown, no explanation
-2. Generate ONLY SELECT queries
+2. Generate the most appropriate SQL statement (SELECT, INSERT, UPDATE, DELETE, ALTER, etc.)
 3. Use appropriate JOINs, WHERE, GROUP BY, ORDER BY, LIMIT as needed
 4. If the question is ambiguous, make reasonable assumptions
 5. Ensure the query is syntactically correct

@@ -33,7 +33,7 @@ from models import ExecuteSQLRequest, QueryRequest, QueryResponse, UploadDatabas
 from schema_introspection import format_schema_for_context, get_database_schema
 from sql_generator import generate_sql_from_question
 from sql_templates import try_template_match
-from sql_validator import validate_sql
+from sql_validator import is_write_query, validate_sql
 
 app = FastAPI(title="Text-to-SQL Analytics API")
 app.include_router(analytics_router)
@@ -185,6 +185,19 @@ def query(request: QueryRequest, db: Session = Depends(get_db_session)):
                     db_session=db,
                     cache_status=cache_status,
                 )
+
+    # If the generated query is a write / DDL statement, return it as a
+    # "preview" — the SQL is shown to the user but never executed.
+    if is_write_query(sql):
+        return QueryResponse(
+            question=request.question,
+            sql=sql,
+            columns=[],
+            rows=[],
+            row_count=0,
+            source=source,
+            is_preview=True,
+        )
 
     try:
         validate_sql(sql)

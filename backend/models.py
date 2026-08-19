@@ -16,6 +16,7 @@ class QueryResponse(BaseModel):
     rows: list[dict[str, Any]]
     row_count: int
     source: str  # "template" or "llm"
+    is_preview: bool = False  # True when query was generated but NOT executed (write/DDL)
 
     # Query cache metadata
     from_cache: bool = False

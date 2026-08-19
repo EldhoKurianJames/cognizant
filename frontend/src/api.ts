@@ -14,6 +14,7 @@ export interface QueryResponse {
   api_tokens_used: number;
   api_cost: number;
   api_cost_saved: number;
+  is_preview: boolean; // true = write/DDL query generated but NOT executed
 }
 
 export interface UploadDatabaseResponse {
