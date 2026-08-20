@@ -45,23 +45,23 @@ app.include_router(analytics_router)
 
 # Create the query cache tables on startup if they don't already exist.
 Base.metadata.create_all(bind=get_engine())
-with get_engine().connect() as _conn:
+# Safely ensure all columns and tables exist in the database
+_startup_statements = [
+    "ALTER TABLE cache_audit_log ADD COLUMN IF NOT EXISTS connection_id VARCHAR(64)",
+    "ALTER TABLE dynamic_query_cache ADD COLUMN IF NOT EXISTS connection_id VARCHAR(64)",
+    "ALTER TABLE dynamic_query_cache ADD COLUMN IF NOT EXISTS question TEXT",
+    "ALTER TABLE dynamic_query_cache ADD COLUMN IF NOT EXISTS question_hash VARCHAR(64)",
+    "ALTER TABLE dynamic_query_cache ADD COLUMN IF NOT EXISTS schema_hash_at_cache_time VARCHAR(64)",
+    "ALTER TABLE dynamic_query_cache ADD COLUMN IF NOT EXISTS api_tokens_used INTEGER DEFAULT 0",
+    "ALTER TABLE dynamic_query_cache ADD COLUMN IF NOT EXISTS api_cost DOUBLE PRECISION DEFAULT 0.0",
+    "ALTER TABLE dynamic_query_cache ADD COLUMN IF NOT EXISTS hit_count INTEGER DEFAULT 0",
+    "ALTER TABLE dynamic_query_cache ADD COLUMN IF NOT EXISTS cache_status VARCHAR(32) DEFAULT 'miss'",
+    "ALTER TABLE dynamic_query_cache ADD COLUMN IF NOT EXISTS last_used_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+]
+for _stmt in _startup_statements:
     try:
-        _conn.execute(text("""
-            ALTER TABLE cache_audit_log ADD COLUMN IF NOT EXISTS connection_id VARCHAR(64);
-            ALTER TABLE dynamic_query_cache ADD COLUMN IF NOT EXISTS connection_id VARCHAR(64);
-            ALTER TABLE dynamic_query_cache ADD COLUMN IF NOT EXISTS question TEXT;
-            ALTER TABLE dynamic_query_cache ADD COLUMN IF NOT EXISTS question_hash VARCHAR(64);
-            ALTER TABLE dynamic_query_cache ADD COLUMN IF NOT EXISTS schema_hash_at_cache_time VARCHAR(64);
-            ALTER TABLE dynamic_query_cache ADD COLUMN IF NOT EXISTS api_tokens_used INTEGER DEFAULT 0;
-            ALTER TABLE dynamic_query_cache ADD COLUMN IF NOT EXISTS api_cost DOUBLE PRECISION DEFAULT 0.0;
-            ALTER TABLE dynamic_query_cache ADD COLUMN IF NOT EXISTS hit_count INTEGER DEFAULT 0;
-            ALTER TABLE dynamic_query_cache ADD COLUMN IF NOT EXISTS cache_status VARCHAR(32) DEFAULT 'miss';
-            ALTER TABLE dynamic_query_cache ADD COLUMN IF NOT EXISTS last_used_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
-            ALTER TABLE dynamic_query_cache ALTER COLUMN schema_hash DROP NOT NULL;
-            ALTER TABLE dynamic_query_cache ALTER COLUMN user_question DROP NOT NULL;
-        """))
-        _conn.commit()
+        with get_engine().begin() as _conn:
+            _conn.execute(text(_stmt))
     except Exception:
         pass
 
@@ -204,33 +204,22 @@ def query(request: QueryRequest, db: Session = Depends(get_db_session)):
     sql = None
     cached_entry = None
     schema_changed_invalidation = False
-    # Scoped by connection_id so an uploaded DB never shares cache entries
-    # with the default database (or with a different upload).
     question_hash = cache_validator.compute_question_hash(request.question, request.connection_id)
 
-    # 1. Try the cache first (only ever populated by LLM-generated queries).
+    # 1. Try the Redis cache first (only ever populated by LLM-generated queries).
     if ENABLE_QUERY_CACHE:
-        existing_entry = cache_validator.find_cache_entry(question_hash, request.connection_id, db)
-        if existing_entry is not None:
-            valid, current_hash = cache_validator.is_cache_valid(existing_entry, engine)
-            if valid:
-                cached_entry = existing_entry
-                sql = existing_entry.generated_sql
-                source = "llm"
-                from_cache = True
-                cache_status = "hit"
-                schema_hash = current_hash
-                api_cost_saved = existing_entry.api_cost
-                # execution time is recorded below, once the query actually runs.
-            elif CACHE_INVALIDATION_ON_SCHEMA_CHANGE:
-                cache_validator.invalidate_cache_entry(
-                    question_hash,
-                    db,
-                    connection_id=request.connection_id,
-                    reason="schema_changed",
-                    new_schema_hash=current_hash,
-                )
-                schema_changed_invalidation = True
+        cached_entry = cache_validator.check_redis_cache(
+            request.question, request.connection_id, engine, db
+        )
+        if cached_entry is not None:
+            sql = cached_entry["sql"]
+            source = "llm"
+            from_cache = True
+            cache_status = "hit"
+            schema_hash = cached_entry.get("schema_hash")
+            api_cost_saved = cached_entry.get("cost", 0.0)
+        else:
+            cache_status = "miss"
 
     # 2. No valid cache entry: try the deterministic template match, then the LLM.
     if sql is None:
@@ -257,19 +246,16 @@ def query(request: QueryRequest, db: Session = Depends(get_db_session)):
                 schema_hash = None
 
             api_cost = round(tokens_used * HAIKU_PRICE_PER_TOKEN, 6)
-            cache_status = "regenerated_schema_changed" if schema_changed_invalidation else "miss"
 
             if ENABLE_QUERY_CACHE and schema_hash is not None:
-                cache_validator.update_cache_entry(
+                cache_validator.update_redis_cache(
                     question=request.question,
-                    question_hash=question_hash,
-                    new_sql=sql,
-                    new_hash=schema_hash,
+                    connection_id=request.connection_id,
+                    sql=sql,
+                    engine=engine,
                     tokens_used=tokens_used,
                     api_cost=api_cost,
                     db_session=db,
-                    cache_status=cache_status,
-                    connection_id=request.connection_id,
                 )
 
     # If the generated query is a write / DDL statement, either execute it
@@ -336,7 +322,11 @@ def query(request: QueryRequest, db: Session = Depends(get_db_session)):
 
     if from_cache and cached_entry is not None:
         cache_validator.record_cache_hit(
-            cached_entry, db, execution_time_ms, connection_id=request.connection_id
+            question=request.question,
+            cached_data=cached_entry,
+            db_session=db,
+            execution_time_ms=execution_time_ms,
+            connection_id=request.connection_id,
         )
     elif source == "llm":
         cache_validator.record_cache_miss(

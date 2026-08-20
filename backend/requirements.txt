@@ -8,3 +8,4 @@ anthropic==0.122.0
 sqlparse==0.6.0
 pydantic==2.13.4
 python-multipart==0.0.20
+redis==5.2.1
